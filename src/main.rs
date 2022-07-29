@@ -25,7 +25,7 @@ mod tests {
         let (sender, mut receiver) = pair::<u64>();
 
         let mut inner_reader = reader.clone();
-        let threads = 32;
+        let threads = 1000;
         let secs = 10;
         let end = Instant::now() + Duration::from_secs(secs);
         let finished = move || Instant::now() > end;
@@ -34,18 +34,22 @@ mod tests {
             let mut max_draw = 0;
 
             while !finished() {
-                receiver
-                    .read(|items| {
-                        let items = &*items;
-                        max_draw = max_draw.max(items.len());
-                        if finished() {
-                            return;
+                writer = receiver
+                    .read(move |items| async move {
+                        //max_draw = max_draw.max(items.len());
+                        if Instant::now() < end {
+                            for value in items {}
+                            /*
+                            writer
+                                .update(|state| {
+                                    for value in items {
+                                        *state += *value;
+                                    }
+                                })
+                                .await;
+                                */
                         }
-                        writer.update(|state| {
-                            for value in items {
-                                *state += *value;
-                            }
-                        });
+                        writer
                     })
                     .await;
             }
@@ -69,11 +73,9 @@ mod tests {
                         assert!(latest >= prev);
                         prev = latest;
                     }
-                    if let Ok(count) = sender.write(1) {
-                        if count > 3000 {
-                            sleep(Duration::from_nanos(1)).await;
-                        }
-                    }
+                    let _ = sender.write(1);
+                    // Make request
+                    sleep(Duration::from_nanos(0)).await;
                 }
             });
         }

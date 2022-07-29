@@ -1,5 +1,5 @@
-use parking_lot::RwLock;
 use std::{ops::Deref, sync::Arc};
+use tokio::sync::RwLock;
 
 struct DoubleBufferData<T> {
     values: [RwLock<T>; 2],
@@ -35,12 +35,13 @@ impl<T> DoubleBufferWriter<T> {
     /// f must be pure (though, it may hold data).
     /// The function will be called twice, once to update
     /// each snapshot.
-    pub fn update<F>(&mut self, f: F)
+    pub async fn update<F>(&mut self, f: F)
     where
-        for<'a> F: Fn(&'a mut T),
+        //for<'a> F: Fn(&'a mut T),
+        F: Fn(&mut T),
     {
         for value in &self.data.values {
-            let mut write = value.write();
+            let mut write = value.write().await;
             f(&mut write);
         }
     }
@@ -54,8 +55,8 @@ impl<T> DoubleBufferReader<T> {
             // These guarantees come from the invariant that there is
             // a single writer and it can only be in a few possible states.
             match self.data.values[self.index].try_read() {
-                Some(data) => return data,
-                None => self.index = if self.index == 0 { 1 } else { 0 },
+                Ok(data) => return data,
+                Err(_) => self.index = if self.index == 0 { 1 } else { 0 },
             }
         }
     }
