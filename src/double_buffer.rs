@@ -37,7 +37,6 @@ impl<T> DoubleBufferWriter<T> {
     /// each snapshot.
     pub async fn update<F>(&mut self, f: F)
     where
-        //for<'a> F: Fn(&'a mut T),
         F: Fn(&mut T),
     {
         for value in &self.data.values {

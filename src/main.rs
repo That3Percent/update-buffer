@@ -15,7 +15,7 @@ mod tests {
         ops::Deref,
         time::{Duration, Instant},
     };
-    use tokio::{spawn, test, time::sleep};
+    use tokio::{spawn, test};
 
     use crate::{pair, reader_writer_pair};
 
@@ -32,26 +32,21 @@ mod tests {
 
         let outer = spawn(async move {
             let mut max_draw = 0;
+            let mut buffer = Vec::new();
 
             while !finished() {
-                writer = receiver
-                    .read(move |items| async move {
-                        //max_draw = max_draw.max(items.len());
-                        if Instant::now() < end {
-                            for value in items {}
-                            /*
-                            writer
-                                .update(|state| {
-                                    for value in items {
-                                        *state += *value;
-                                    }
-                                })
-                                .await;
-                                */
-                        }
-                        writer
-                    })
-                    .await;
+                receiver.read(&mut buffer).await;
+                if Instant::now() < end {
+                    writer
+                        .update(|state| {
+                            for value in &buffer[..] {
+                                *state += *value;
+                            }
+                        })
+                        .await;
+                }
+                max_draw = max_draw.max(buffer.len());
+                buffer.clear();
             }
             let latest = *inner_reader.latest().deref();
             println!(
@@ -74,13 +69,12 @@ mod tests {
                         prev = latest;
                     }
                     let _ = sender.write(1);
-                    // Make request
-                    sleep(Duration::from_nanos(0)).await;
+                    // Make request. If this task doesn't await at some point
+                    // then the writer task is never scheduled and becomes starved.
+                    tokio::task::yield_now().await;
                 }
             });
         }
-        drop(sender);
-
         outer.await.unwrap();
     }
 }
