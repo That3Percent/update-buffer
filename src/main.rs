@@ -13,53 +13,41 @@ mod tests {
     use num_format::{Locale, ToFormattedString};
     use std::{
         ops::Deref,
-        thread::{self, spawn},
         time::{Duration, Instant},
     };
+    use tokio::{spawn, test, time::sleep};
 
     use crate::{pair, reader_writer_pair};
 
-    fn sleep() {
-        // Sleeping 0ns to yield is not possible because the implementation
-        // has a `while time > 0`.
-        std::thread::sleep(Duration::from_nanos(1));
-    }
-
     #[test]
-    fn spew() {
+    async fn spew() {
         let (reader, mut writer) = reader_writer_pair(0u64, 0);
         let (sender, mut receiver) = pair::<u64>();
 
         let mut inner_reader = reader.clone();
-        let threads = 7;
-        let secs = 4;
-
+        let threads = 32;
+        let secs = 10;
         let end = Instant::now() + Duration::from_secs(secs);
         let finished = move || Instant::now() > end;
 
-        let outer = thread::spawn(move || {
+        let outer = spawn(async move {
             let mut max_draw = 0;
 
             while !finished() {
-                let processed = receiver.read(|items| {
-                    let items = &*items;
-                    let count = items.len();
-                    if finished() {
-                        return 0;
-                    }
-                    if count > 0 {
+                receiver
+                    .read(|items| {
+                        let items = &*items;
+                        max_draw = max_draw.max(items.len());
+                        if finished() {
+                            return;
+                        }
                         writer.update(|state| {
                             for value in items {
                                 *state += *value;
                             }
                         });
-                    }
-                    count
-                });
-                max_draw = max_draw.max(processed);
-                if processed == 0 {
-                    sleep()
-                }
+                    })
+                    .await;
             }
             let latest = *inner_reader.latest().deref();
             println!(
@@ -73,16 +61,17 @@ mod tests {
             let mut sender = sender.clone();
             let mut reader = reader.clone();
             let mut prev = 0;
-            spawn(move || {
+            spawn(async move {
                 while !finished() {
-                    let hold = reader.latest();
-                    let latest = *hold.deref();
-                    assert!(latest >= prev);
-                    prev = latest;
-                    drop(hold);
+                    {
+                        let hold = reader.latest();
+                        let latest = *hold.deref();
+                        assert!(latest >= prev);
+                        prev = latest;
+                    }
                     if let Ok(count) = sender.write(1) {
                         if count > 3000 {
-                            sleep();
+                            sleep(Duration::from_nanos(1)).await;
                         }
                     }
                 }
@@ -90,6 +79,6 @@ mod tests {
         }
         drop(sender);
 
-        outer.join().unwrap();
+        outer.await.unwrap();
     }
 }
