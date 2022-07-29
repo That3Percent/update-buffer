@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 parking_lot = "0.12.1"
-
+second-stack = "0.3.5"
 
 [dev-dependencies]
 num-format = "0.4.0"
